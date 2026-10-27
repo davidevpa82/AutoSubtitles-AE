@@ -1,0 +1,11 @@
+1
+00:00:00,500 --> 00:00:03,000
+Hi! These are test subtitles.
+
+2
+00:00:03,200 --> 00:00:06,500
+The Auto Subtitles panel placed them automatically.
+
+3
+00:00:06,700 --> 00:00:09,500
+Change font, color and offset in the panel — then click Create Subtitles.
