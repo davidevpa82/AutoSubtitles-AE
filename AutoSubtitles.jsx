@@ -139,6 +139,16 @@
    гибкий: «5», «90.5», «1:30». Перепутали «с» и «до» — меняются
    местами сами. Поля не запоминаются после перезапуска AE — чтобы
    диапазон не остался включённым случайно. Работает для обеих дорожек.
+   v1.26.0: SRT НА GITHUB / С GITHUB (вкладка «Дорожки») — кнопки
+   выкладывают/скачивают .srt из папки srt/ репозитория через gh CLI
+   (нужен вход: gh auth login). Выкладывается текущий «Файл 1» (или
+   спросит); скачиваются все .srt в папку видео, локальные не
+   затираются (_gh-суффикс), одиночный файл сразу подставляется в
+   «Файл 1». Хелпер — gh-srt.ps1 рядом с панелью.
+   v1.26.1: БЕЗОПАСНОСТЬ — убран eval() при разборе kar.json (флаг
+   код-инъекции): свой строгий JSON-парсер (объекты/массивы/строки/
+   числа/литералы), JSON.parse где движок его даёт. Чужой или правленый
+   kar.json больше не может запустить код в AE.
    v1.19.10: ПОИСК ШРИФТОВ как у эффектов. Печатаешь в поле «Шрифт»
    часть имени — под ним выпадает список УСТАНОВЛЕННЫХ в AE шрифтов
    (app.fonts.allFonts, работает с AE 24.0; из каждой семейственной
@@ -174,7 +184,7 @@
 (function autoSubtitles(thisObj) {
 
   var SCRIPT_NAME = "Auto Subtitles";
-  var VERSION_STR = "v1.25.0";
+  var VERSION_STR = "v1.26.1";
   var PREFIX = "AutoSubtitles";
 
   var COLOR_NAMES = ["Белый", "Чёрный", "Жёлтый", "Красный", "Зелёный", "Голубой", "Оранжевый", "Розовый", "Другой..."];
@@ -230,6 +240,95 @@
   }
 
   // v1.25: гибкое время — «5» = 5 с, «1:30»/«0:05» = минуты:секунды,
+  /* ---- v1.26.1: БЕЗОПАСНЫЙ РАЗБОР kar.json вместо eval() -------------
+     eval на json-файле = код-инъекция (флаг безопасности): правленый
+     или чужой kar.json запускал бы код в AE. Мини-парсер JSON:
+     объекты, массивы, строки с экранированием, числа, литералы. ---- */
+  function strictJsonParse(txt) {
+    var s = String(txt), pos = 0;
+    function wsJ() { while (pos < s.length && " \t\r\n".indexOf(s.charAt(pos)) >= 0) pos++; }
+    function valJ() {
+      wsJ();
+      var ch = s.charAt(pos);
+      if (ch === "{") return objJ();
+      if (ch === "[") return arrJ();
+      if (ch === '"') return strJ();
+      if (ch === "-" || (ch >= "0" && ch <= "9")) return numJ();
+      if (s.substr(pos, 4) === "true") { pos += 4; return true; }
+      if (s.substr(pos, 5) === "false") { pos += 5; return false; }
+      if (s.substr(pos, 4) === "null") { pos += 4; return null; }
+      throw new Error("bad json @" + pos);
+    }
+    function objJ() {
+      var o = {}; pos++; wsJ();
+      if (s.charAt(pos) === "}") { pos++; return o; }
+      for (;;) {
+        wsJ();
+        if (s.charAt(pos) !== '"') throw new Error("bad key @" + pos);
+        var k = strJ();
+        wsJ();
+        if (s.charAt(pos) !== ":") throw new Error("bad colon @" + pos);
+        pos++;
+        o[k] = valJ();
+        wsJ();
+        if (s.charAt(pos) === ",") { pos++; continue; }
+        if (s.charAt(pos) === "}") { pos++; return o; }
+        throw new Error("bad obj @" + pos);
+      }
+    }
+    function arrJ() {
+      var a = []; pos++; wsJ();
+      if (s.charAt(pos) === "]") { pos++; return a; }
+      for (;;) {
+        a.push(valJ());
+        wsJ();
+        if (s.charAt(pos) === ",") { pos++; continue; }
+        if (s.charAt(pos) === "]") { pos++; return a; }
+        throw new Error("bad arr @" + pos);
+      }
+    }
+    function strJ() {
+      var r = ""; pos++;
+      while (pos < s.length) {
+        var c = s.charAt(pos);
+        if (c === '"') { pos++; return r; }
+        if (c === "\\") {
+          pos++;
+          var e = s.charAt(pos);
+          if (e === "n") { r += "\n"; pos++; continue; }
+          if (e === "r") { r += "\r"; pos++; continue; }
+          if (e === "t") { r += "\t"; pos++; continue; }
+          if (e === "b") { r += "\b"; pos++; continue; }
+          if (e === "f") { r += "\f"; pos++; continue; }
+          if (e === "/") { r += "/"; pos++; continue; }
+          if (e === '"') { r += '"'; pos++; continue; }
+          if (e === "\\") { r += "\\"; pos++; continue; }
+          if (e === "u") { r += String.fromCharCode(parseInt(s.substr(pos + 1, 4), 16)); pos += 5; continue; }
+          r += e; pos++; continue;
+        }
+        r += c; pos++;
+      }
+      throw new Error("unterminated string");
+    }
+    function numJ() {
+      var m = s.substr(pos).match(/^-?\d+(\.\d+)?([eE][+-]?\d+)?/);
+      if (!m) throw new Error("bad number @" + pos);
+      pos += m[0].length;
+      return parseFloat(m[0]);
+    }
+    var v = valJ();
+    wsJ();
+    if (pos < s.length) throw new Error("trailing data");
+    return v;
+  }
+  // обёртка: JSON.parse где движок его даёт, строгий парсер где нет
+  function safeParseJson(txt) {
+    try {
+      if (typeof JSON !== "undefined" && JSON && typeof JSON.parse === "function") return JSON.parse(txt);
+    } catch (eJ0) { return null; }
+    try { return strictJsonParse(txt); } catch (eJ1) { return null; }
+  }
+
   // «90.5» = с дробью. Пусто/мусор → -1 (диапазон выключен).
   function parseTimeFlex(txt) {
     var t = trimStr(String(txt));
@@ -712,7 +811,7 @@
       // kar-данные Whisper: [{"i":N,"w":[[start,end,"слово"],...]}] рядом с SRT
       var kd = null;
       if (o.karFile && o.karFile.exists) {
-        try { kd = eval("(" + readText(o.karFile, "UTF-8") + ")"); } catch (eKA5) { kd = null; }
+        try { kd = safeParseJson(readText(o.karFile, "UTF-8")); } catch (eKA5) { kd = null; }
       }
 
       var karCount = 0;
@@ -1696,7 +1795,7 @@
         try {
           var karF = new File(ctx.file.fsName.replace(/\.srt$/i, ".kar.json"));
           if (karF.exists) {
-            var karData = eval("(" + readText(karF, "UTF-8") + ")");
+            var karData = safeParseJson(readText(karF, "UTF-8"));
             var karOk = 0;
             if (karData && karData.length) {
               for (var kI2 = 0; kI2 < cues1.length && kI2 < karData.length; kI2++) {
@@ -2342,6 +2441,17 @@
     var btnEditor = gEdit.add("button", undefined, "✎ Редактор субтитров — исправить распознанное");
     btnEditor.helpTip = "Отдельное окно: список всех реплик файла 1/2, правка текста любой реплики, сохранение обратно в SRT. Дальше — «Создать субтитры» (панель возьмёт правленный файл).\n\rДвойной клик по реплике выделяет в таймлайне ВСЕ её слои (база + ♪ + фон-полоса) — правь стиль, не листая сотни слоёв.";
     paintButton(btnEditor, [0.6, 0.9, 1]);
+
+    // v1.26: SRT НА GITHUB / С GITHUB (через gh CLI, нужен вход: gh auth login)
+    var gGit = panTracks.add("group");
+    var btnGhUp = gGit.add("button", undefined, "⬆ SRT на GitHub");
+    try { btnGhUp.alignment = ["fill", "center"]; } catch (eGh0) {}
+    paintGhost(btnGhUp);
+    btnGhUp.helpTip = "Выложить SRT на GitHub (репозиторий AutoSubtitles-AE, папка srt/).\n\rБерётся текущий «Файл 1»; если он не выбран — спросит файл.\n\rХранится в облаке: друг скачивает по ссылке из Releases или кнопкой «SRT с GitHub».\n\rНужен gh CLI со входом (gh auth login) — на этом компьютере уже есть.";
+    var btnGhDn = gGit.add("button", undefined, "⬇ SRT с GitHub");
+    try { btnGhDn.alignment = ["fill", "center"]; } catch (eGh1) {}
+    paintGhost(btnGhDn);
+    btnGhDn.helpTip = "Скачать все .srt из папки srt/ репозитория в папку видео (или последнюю использованную).\n\rЛокальные файлы не затираются (дописывается _gh). Если скачался один — сразу подставится в «Файл 1».";
 
     var g2 = panTracks.add("group");
     g2.add("statictext", undefined, "Кодировка:");
@@ -3937,6 +4047,65 @@
       } catch (ePv0) {
         alert("Ошибка превью-рендера: " + ePv0.toString(), SCRIPT_NAME);
       }
+    };
+
+    // v1.26: помощники GitHub (gh CLI вызывается с перенаправлением вывода в лог)
+    function runGhCmd(cmdLine) {
+      var logF = Folder.temp.fsName + "\\AutoSub_gh_log.txt";
+      try { system.callSystem('cmd /c ' + cmdLine + ' > "' + logF + '" 2>&1'); } catch (eGh2) {}
+      var outG = "";
+      try {
+        var fG = new File(logF);
+        fG.encoding = "UTF-8";
+        if (fG.open("r")) { outG = fG.read(); fG.close(); }
+      } catch (eGh3) {}
+      return outG;
+    }
+    // куда складывать скачанные SRT: папка видео → последняя папка → рабочий стол
+    function panelDirForSrt() {
+      if (currentVideo && currentVideo.exists) return folderOf(currentVideo);
+      var lastF = loadPref("lastFolder", "");
+      if (lastF !== "" && new Folder(lastF).exists) return lastF;
+      return Folder.desktop.fsName;
+    }
+
+    // v1.26: SRT НА GITHUB — выложить текущий (или выбранный) SRT в репозиторий
+    btnGhUp.onClick = function () {
+      try { saveUiState(); } catch (eSU6) {}
+      var fU = (currentFile && currentFile.exists) ? currentFile : null;
+      if (!fU) {
+        fU = File.openDialog("Какой SRT выложить на GitHub?", "SRT:*.srt");
+        if (!fU) return;
+      }
+      var logU = runGhCmd('powershell -NoProfile -ExecutionPolicy Bypass -File "' + getPanelFolder() + '\\gh-srt.ps1" -Action upload -LocalFile "' + fU.fsName + '"');
+      var outU = trimStr(logU);
+      if (outU.indexOf("OK:") === 0) {
+        alert("SRT выложен на GitHub:\n\r" + outU + "\n\rПосмотреть: github.com/davidevpa82/AutoSubtitles-AE — папка srt/", SCRIPT_NAME);
+      } else {
+        alert("Не получилось выложить:\n\r" + outU + "\n\rНужен gh CLI со входом: gh auth login", SCRIPT_NAME);
+      }
+    };
+
+    // v1.26: SRT С GITHUB — скачать все .srt из репозитория в папку
+    btnGhDn.onClick = function () {
+      try { saveUiState(); } catch (eSU7) {}
+      var destD = panelDirForSrt();
+      var logD = runGhCmd('powershell -NoProfile -ExecutionPolicy Bypass -File "' + getPanelFolder() + '\\gh-srt.ps1" -Action download -DestDir "' + destD + '"');
+      var outD = trimStr(logD);
+      if (outD.indexOf("OK:") !== 0) {
+        alert("Не получилось скачать:\n\r" + outD + "\n\rНужен gh CLI со входом: gh auth login", SCRIPT_NAME);
+        return;
+      }
+      // один файл — сразу подставить в «Файл 1»
+      var linesD = outD.split(/[\r\n]+/);
+      var onlyD = null, cntD = 0;
+      for (var lD = 0; lD < linesD.length; lD++) {
+        if (linesD[lD].indexOf("OK:") === 0) { cntD++; onlyD = trimStr(linesD[lD].substring(3)); }
+      }
+      if (cntD === 1 && onlyD) {
+        try { previewInto(1, new File(onlyD)); } catch (eDl1) {}
+      }
+      alert("Скачано с GitHub: " + cntD + " файл(ов) в\n\r" + destD + "\n\r" + outD + (cntD === 1 ? "\n\rУже подставлен в «Файл 1»." : ""), SCRIPT_NAME);
     };
 
     // v1.22: АУДИТ ГОТОВНОСТИ — чек-лист «что мешает прямо сейчас»

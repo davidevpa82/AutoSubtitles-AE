@@ -25,6 +25,7 @@ $files = @(
     'AutoSubtitles.jsx',
     'transcribe-video.ps1',
     'translate-srt.ps1',
+    'gh-srt.ps1',
     'УСТАНОВКА.txt',
     'README.md',
     'sample.ru.srt',
