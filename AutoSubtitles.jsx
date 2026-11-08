@@ -195,7 +195,7 @@
 (function autoSubtitles(thisObj) {
 
   var SCRIPT_NAME = "Auto Subtitles";
-  var VERSION_STR = "v1.26.3";
+  var VERSION_STR = "v1.26.4";
   var PREFIX = "AutoSubtitles";
 
   var COLOR_NAMES = ["Белый", "Чёрный", "Жёлтый", "Красный", "Зелёный", "Голубой", "Оранжевый", "Розовый", "Другой..."];
@@ -1850,6 +1850,8 @@
       }
 
       savePref("lastFolder", file.parent.fsName);
+      // v1.26.4: открыть комп с результатом — видно, куда легли субтитры
+      try { comp.openInViewer(); } catch (eOv0) {}
 
       // Отчёт о неустановленных эффектах (Deep Glow / Sapphire / ...)
       var fxMiss = {};
@@ -4069,7 +4071,10 @@
         alert("Не удалось прочитать файл:\n" + eI0.toString(), SCRIPT_NAME);
         return;
       }
-      try { btnGo.onClick(); } catch (eI1) {}
+      try { btnGo.onClick(); } catch (eI1) {
+        // v1.26.4: ошибка создания больше не глотается молча — показываем
+        alert("Ошибка при создании субтитров:\n" + eI1.toString() + (eI1.line ? "\n(строка " + eI1.line + ")" : ""), SCRIPT_NAME);
+      }
     };
 
     // v1.22: АУДИТ ГОТОВНОСТИ — чек-лист «что мешает прямо сейчас»
