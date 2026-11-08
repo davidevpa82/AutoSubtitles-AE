@@ -144,7 +144,12 @@
    (нужен вход: gh auth login). Выкладывается текущий «Файл 1» (или
    спросит); скачиваются все .srt в папку видео, локальные не
    затираются (_gh-суффикс), одиночный файл сразу подставляется в
-   «Файл 1». Хелпер — gh-srt.ps1 рядом с панелью.
+   «Файл 1». Хелпер gh-srt.ps1 удалён (v1.26.2) — кнопки GitHub
+   убраны по просьбе, вместо них «Импорт SRT» одним кликом.
+   v1.26.2: ИМПОРТ SRT ОДНИМ КЛИКОМ — кнопка во вкладке «Дорожки»:
+   выбираешь файл .srt/.vtt — он подставляется в «Файл 1» и слои
+   создаются сразу (со всеми текущими настройками). Кнопки «SRT на
+   GitHub / с GitHub» убраны по просьбе.
    v1.26.1: БЕЗОПАСНОСТЬ — убран eval() при разборе kar.json (флаг
    код-инъекции): свой строгий JSON-парсер (объекты/массивы/строки/
    числа/литералы), JSON.parse где движок его даёт. Чужой или правленый
@@ -184,7 +189,7 @@
 (function autoSubtitles(thisObj) {
 
   var SCRIPT_NAME = "Auto Subtitles";
-  var VERSION_STR = "v1.26.1";
+  var VERSION_STR = "v1.26.2";
   var PREFIX = "AutoSubtitles";
 
   var COLOR_NAMES = ["Белый", "Чёрный", "Жёлтый", "Красный", "Зелёный", "Голубой", "Оранжевый", "Розовый", "Другой..."];
@@ -2442,16 +2447,12 @@
     btnEditor.helpTip = "Отдельное окно: список всех реплик файла 1/2, правка текста любой реплики, сохранение обратно в SRT. Дальше — «Создать субтитры» (панель возьмёт правленный файл).\n\rДвойной клик по реплике выделяет в таймлайне ВСЕ её слои (база + ♪ + фон-полоса) — правь стиль, не листая сотни слоёв.";
     paintButton(btnEditor, [0.6, 0.9, 1]);
 
-    // v1.26: SRT НА GITHUB / С GITHUB (через gh CLI, нужен вход: gh auth login)
-    var gGit = panTracks.add("group");
-    var btnGhUp = gGit.add("button", undefined, "⬆ SRT на GitHub");
-    try { btnGhUp.alignment = ["fill", "center"]; } catch (eGh0) {}
-    paintGhost(btnGhUp);
-    btnGhUp.helpTip = "Выложить SRT на GitHub (репозиторий AutoSubtitles-AE, папка srt/).\n\rБерётся текущий «Файл 1»; если он не выбран — спросит файл.\n\rХранится в облаке: друг скачивает по ссылке из Releases или кнопкой «SRT с GitHub».\n\rНужен gh CLI со входом (gh auth login) — на этом компьютере уже есть.";
-    var btnGhDn = gGit.add("button", undefined, "⬇ SRT с GitHub");
-    try { btnGhDn.alignment = ["fill", "center"]; } catch (eGh1) {}
-    paintGhost(btnGhDn);
-    btnGhDn.helpTip = "Скачать все .srt из папки srt/ репозитория в папку видео (или последнюю использованную).\n\rЛокальные файлы не затираются (дописывается _gh). Если скачался один — сразу подставится в «Файл 1».";
+    // v1.26.2: ИМПОРТ SRT одним кликом — файл → «Файл 1» → слои сразу
+    var gImport = panTracks.add("group");
+    var btnImport = gImport.add("button", undefined, "Импорт SRT — файл → слои в один клик");
+    try { btnImport.alignment = ["fill", "center"]; } catch (eIm0) {}
+    paintGhost(btnImport);
+    btnImport.helpTip = "Выбери файл .srt/.vtt — он подставится в «Файл 1» и субтитры СОЗДАДУТСЯ сразу (со всеми текущими настройками стиля и вкладок).\n\rПотом можно менять стиль и пересоздавать кнопкой «Создать субтитры».";
 
     var g2 = panTracks.add("group");
     g2.add("statictext", undefined, "Кодировка:");
@@ -4049,63 +4050,21 @@
       }
     };
 
-    // v1.26: помощники GitHub (gh CLI вызывается с перенаправлением вывода в лог)
-    function runGhCmd(cmdLine) {
-      var logF = Folder.temp.fsName + "\\AutoSub_gh_log.txt";
-      try { system.callSystem('cmd /c ' + cmdLine + ' > "' + logF + '" 2>&1'); } catch (eGh2) {}
-      var outG = "";
+    // v1.26.2: ИМПОРТ SRT — файл подставляется в «Файл 1» и слои создаются сразу
+    btnImport.onClick = function () {
+      var startFolder = null;
+      var savedF = loadPref("lastFolder", "");
+      if (savedF !== "" && new Folder(savedF).exists) startFolder = new Folder(savedF);
+      var fI = File.openDialog("Импорт SRT — выбери файл субтитров", startFolder, false);
+      if (!fI) return;
       try {
-        var fG = new File(logF);
-        fG.encoding = "UTF-8";
-        if (fG.open("r")) { outG = fG.read(); fG.close(); }
-      } catch (eGh3) {}
-      return outG;
-    }
-    // куда складывать скачанные SRT: папка видео → последняя папка → рабочий стол
-    function panelDirForSrt() {
-      if (currentVideo && currentVideo.exists) return folderOf(currentVideo);
-      var lastF = loadPref("lastFolder", "");
-      if (lastF !== "" && new Folder(lastF).exists) return lastF;
-      return Folder.desktop.fsName;
-    }
-
-    // v1.26: SRT НА GITHUB — выложить текущий (или выбранный) SRT в репозиторий
-    btnGhUp.onClick = function () {
-      try { saveUiState(); } catch (eSU6) {}
-      var fU = (currentFile && currentFile.exists) ? currentFile : null;
-      if (!fU) {
-        fU = File.openDialog("Какой SRT выложить на GitHub?", "SRT:*.srt");
-        if (!fU) return;
-      }
-      var logU = runGhCmd('powershell -NoProfile -ExecutionPolicy Bypass -File "' + getPanelFolder() + '\\gh-srt.ps1" -Action upload -LocalFile "' + fU.fsName + '"');
-      var outU = trimStr(logU);
-      if (outU.indexOf("OK:") === 0) {
-        alert("SRT выложен на GitHub:\n\r" + outU + "\n\rПосмотреть: github.com/davidevpa82/AutoSubtitles-AE — папка srt/", SCRIPT_NAME);
-      } else {
-        alert("Не получилось выложить:\n\r" + outU + "\n\rНужен gh CLI со входом: gh auth login", SCRIPT_NAME);
-      }
-    };
-
-    // v1.26: SRT С GITHUB — скачать все .srt из репозитория в папку
-    btnGhDn.onClick = function () {
-      try { saveUiState(); } catch (eSU7) {}
-      var destD = panelDirForSrt();
-      var logD = runGhCmd('powershell -NoProfile -ExecutionPolicy Bypass -File "' + getPanelFolder() + '\\gh-srt.ps1" -Action download -DestDir "' + destD + '"');
-      var outD = trimStr(logD);
-      if (outD.indexOf("OK:") !== 0) {
-        alert("Не получилось скачать:\n\r" + outD + "\n\rНужен gh CLI со входом: gh auth login", SCRIPT_NAME);
+        previewInto(1, fI);
+        savePref("lastFolder", folderOf(fI));
+      } catch (eI0) {
+        alert("Не удалось прочитать файл:\n" + eI0.toString(), SCRIPT_NAME);
         return;
       }
-      // один файл — сразу подставить в «Файл 1»
-      var linesD = outD.split(/[\r\n]+/);
-      var onlyD = null, cntD = 0;
-      for (var lD = 0; lD < linesD.length; lD++) {
-        if (linesD[lD].indexOf("OK:") === 0) { cntD++; onlyD = trimStr(linesD[lD].substring(3)); }
-      }
-      if (cntD === 1 && onlyD) {
-        try { previewInto(1, new File(onlyD)); } catch (eDl1) {}
-      }
-      alert("Скачано с GitHub: " + cntD + " файл(ов) в\n\r" + destD + "\n\r" + outD + (cntD === 1 ? "\n\rУже подставлен в «Файл 1»." : ""), SCRIPT_NAME);
+      try { btnGo.onClick(); } catch (eI1) {}
     };
 
     // v1.22: АУДИТ ГОТОВНОСТИ — чек-лист «что мешает прямо сейчас»
