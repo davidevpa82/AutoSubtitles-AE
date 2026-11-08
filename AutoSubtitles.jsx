@@ -150,6 +150,12 @@
    выбираешь файл .srt/.vtt — он подставляется в «Файл 1» и слои
    создаются сразу (со всеми текущими настройками). Кнопки «SRT на
    GitHub / с GitHub» убраны по просьбе.
+   v1.26.3: ИСПРАВЛЕН ДИАЛОГ ВЫБОРА ФАЙЛА — «Импорт SRT», «Файл 1»
+   и «Файл 2» показывали ТОЛЬКО ПАПКИ (File.openDialog с Folder-объектом
+   на этой сборке переключается в режим выбора папок и прячет файлы).
+   Теперь строковый фильтр «Субтитры:*.srt;*.vtt + Все файлы» —
+   файлы видны и выбираются. Побочный эффект: диалог открывается в
+   последней использованной папке Windows, а не в папке видео.
    v1.26.1: БЕЗОПАСНОСТЬ — убран eval() при разборе kar.json (флаг
    код-инъекции): свой строгий JSON-парсер (объекты/массивы/строки/
    числа/литералы), JSON.parse где движок его даёт. Чужой или правленый
@@ -189,7 +195,7 @@
 (function autoSubtitles(thisObj) {
 
   var SCRIPT_NAME = "Auto Subtitles";
-  var VERSION_STR = "v1.26.2";
+  var VERSION_STR = "v1.26.3";
   var PREFIX = "AutoSubtitles";
 
   var COLOR_NAMES = ["Белый", "Чёрный", "Жёлтый", "Красный", "Зелёный", "Голубой", "Оранжевый", "Розовый", "Другой..."];
@@ -4052,10 +4058,9 @@
 
     // v1.26.2: ИМПОРТ SRT — файл подставляется в «Файл 1» и слои создаются сразу
     btnImport.onClick = function () {
-      var startFolder = null;
-      var savedF = loadPref("lastFolder", "");
-      if (savedF !== "" && new Folder(savedF).exists) startFolder = new Folder(savedF);
-      var fI = File.openDialog("Импорт SRT — выбери файл субтитров", startFolder, false);
+    // v1.26.3: строковый фильтр вместо Folder-объекта — передача папки
+    // переключала диалог в режим «только папки» (файлы прятались)
+    var fI = File.openDialog("Импорт SRT — выбери файл субтитров", "Субтитры:*.srt;*.vtt, Все файлы:*.*");
       if (!fI) return;
       try {
         previewInto(1, fI);
@@ -4684,13 +4689,8 @@
     };
 
     btnFile.onClick = function () {
-      var startFolder = null;
-      var savedFolder = loadPref("lastFolder", "");
-      if (savedFolder !== "") {
-        var sf = new Folder(savedFolder);
-        if (sf.exists) startFolder = sf;
-      }
-      var f = File.openDialog("Выберите файл субтитров (.srt / .vtt)", startFolder, false);
+      // v1.26.3: строковый фильтр (Folder-объект прятал файлы в диалоге)
+      var f = File.openDialog("Выберите файл субтитров (.srt / .vtt)", "Субтитры:*.srt;*.vtt, Все файлы:*.*");
       if (f) try { previewInto(1, f); savePref("lastFolder", folderOf(f)); } catch (err) {
         alert("Не удалось прочитать файл:\n" + err.toString(), SCRIPT_NAME);
       }
